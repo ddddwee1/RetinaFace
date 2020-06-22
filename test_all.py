@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import os 
 import retina
-import img_preprocess
+import img_process
 import glob 
 
 def visualize_img(img, lmk, box=None):
@@ -38,10 +38,10 @@ if __name__=="__main__":
 
 	img_paths = glob.glob('./imgs/*.*')
 	imgs = [cv2.imread(i) for i in img_paths]
-	img_batch, metas = img_preprocess.process_batch(imgs)
+	img_batch, metas = img_process.process_batch(imgs)
 
 	boxes, lmks = detector.detect(img_batch, threshold=config.box_score_thresh)
-	lmks, boxes = img_preprocess.postprocess_batch(lmks, metas, boxes)
+	lmks, boxes = img_process.postprocess_batch(lmks, metas, boxes)
 
 	vis = visualize(imgs, lmks, boxes)
 	for i in range(len(vis)):
