@@ -10,15 +10,15 @@ The official code takes too much CPU computation (which happens in generate_anch
 
 It is obvious that we don't need to render all anchors before selecting proposals. Therefore, I change the pipeline to:
 
-- Select proposal indices where (conf > threshold) (image_idx, row_idx, col_idx)
+- Select proposal indices where (conf > threshold) to produce (image_idx, row_idx, col_idx)
 
-- Generate anchors for selected proposals
+- Generate anchors for selected indices only (which is much light-weighted)
 
-- Generate landmarks 
+- Generate landmarks for selected indices only 
 
-- Batched_nms 
+- Batched_nms (from torchvision)
 
-I move all operations to GPU which will be much faster. 
+I move all operations to GPU which should be much faster. 
 
 ## Sample usage
 
