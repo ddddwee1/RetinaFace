@@ -1,9 +1,9 @@
 import numpy as np 
 import torch
 from TorchSUL import Model as M 
-import mnet 
+import retina_resnet 
 import cv2 
-
+import config 
 import torchvision 
 
 def _whctrs(anchor):
@@ -111,8 +111,8 @@ def bbox_pred(boxes, box_deltas):
 	# pred_boxes[:, 2:3] = pred_ctr_x + 0.5 * (pred_w - 1.0)
 	# pred_boxes[:, 3:4] = pred_ctr_y + 0.5 * (pred_h - 1.0)
 
-	# if box_deltas.shape[1]>4:
-	# 	pred_boxes[:, 4:] = box_deltas[:, 4:]
+	if box_deltas.shape[1]>4:
+		pred_boxes[:, 4:] = box_deltas[:, 4:]
 	return pred_boxes
 
 def clip_boxes(boxes, im_shape):
@@ -170,24 +170,24 @@ def post_proc(net_out, im_info, threshold, im_scale, _feat_stride_fpn, _num_anch
 		scores = torch.einsum('ijkl->iklj', scores).reshape(-1)
 		
 		order = torch.where(scores>=threshold)[0]
-		
+
 		bbox_deltas = torch.einsum('ijkl->iklj', bbox_deltas)
 		bbox_pred_len = bbox_deltas.shape[3]//A
 		bbox_deltas = bbox_deltas.reshape((-1, bbox_pred_len))
 		
-
 		pixidx = torch.div(order, 2)
 		category = torch.remainder(order, 2)
 		pixrow = torch.div(pixidx, width)
 		pixcol = torch.remainder(pixidx, width)
 		imgidx = torch.div(pixrow, height)
 		pixrow = torch.remainder(pixrow, height)
+		
 		pixrow = pixrow.unsqueeze(-1)
 		pixcol = pixcol.unsqueeze(-1)
 
 		anchors = anchors_fpn[category]
-		anchors[:, [0,2]] += s * pixcol.to(dtype=torch.float32)
-		anchors[:, [1,3]] += s * pixrow.to(dtype=torch.float32)
+		anchors[:, [0,2]] += s * pixcol
+		anchors[:, [1,3]] += s * pixrow
 		proposals = bbox_pred(anchors, bbox_deltas[order])
 		proposals = clip_boxes(proposals, im_info[:2])
 
@@ -206,7 +206,6 @@ def post_proc(net_out, im_info, threshold, im_scale, _feat_stride_fpn, _num_anch
 		landmarks[:, :, 0:2] /= im_scale
 		landmarks_list.append(landmarks)
 
-
 	proposals = torch.cat(proposals_list, dim=0)
 	landmarks = torch.cat(landmarks_list, dim=0)
 	scores = torch.cat(scores_list)
@@ -216,13 +215,17 @@ def post_proc(net_out, im_info, threshold, im_scale, _feat_stride_fpn, _num_anch
 
 
 class RetinaFace(object):
-	def __init__(self, modelpath, nms=0.4):
-		model = mnet.Detector()
+	def __init__(self, modelpath, nms=0.4, worker=2):
+		model = retina_resnet.Detector()
 		model = model.eval()
 		x = torch.from_numpy(np.ones([1,3,640,640]).astype(np.float32))
 		_ = model(x)
 		M.Saver(model).restore(modelpath)
 		model.cuda()
+		if isinstance(config.gpus, list):
+			if len(config.gpus)>1:
+				print('Using multiple gpus:', config.gpus)
+				model = torch.nn.DataParallel(model, device_ids=config.gpus)
 		self.model = model
 
 		self.nms_threshold = nms
@@ -240,11 +243,12 @@ class RetinaFace(object):
 			self._anchors_fpn[k] = v
 
 		self._num_anchors = dict(zip(self.fpn_keys, [anchors.shape[0] for anchors in self._anchors_fpn.values()]))
+		self.worker = worker
 		
 	def detect(self, img_list, threshold=0.6, keep_first=False):
+		# im_scale=scale
 		batch_size = len(img_list)
 		im_info = [img_list[0].shape[0], img_list[0].shape[1]]
-		# im_scale = img_list[0].shape[0] / img_list2[0].shape[0]
 		im_scale = 1.0
 
 		inputs = np.stack(img_list, axis=0).astype(np.float32).transpose((0, 3, 1, 2))
