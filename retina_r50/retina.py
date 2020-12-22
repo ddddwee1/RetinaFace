@@ -175,11 +175,11 @@ def post_proc(net_out, im_info, threshold, im_scale, _feat_stride_fpn, _num_anch
 		bbox_pred_len = bbox_deltas.shape[3]//A
 		bbox_deltas = bbox_deltas.reshape((-1, bbox_pred_len))
 		
-		pixidx = torch.div(order, 2)
+		pixidx = torch.floor_divide(order, 2)
 		category = torch.remainder(order, 2)
-		pixrow = torch.div(pixidx, width)
+		pixrow = torch.floor_divide(pixidx, width)
 		pixcol = torch.remainder(pixidx, width)
-		imgidx = torch.div(pixrow, height)
+		imgidx = torch.floor_divide(pixrow, height)
 		pixrow = torch.remainder(pixrow, height)
 		
 		pixrow = pixrow.unsqueeze(-1)
